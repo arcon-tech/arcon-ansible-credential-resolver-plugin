@@ -12,7 +12,7 @@ export ARCON_USERNAME=<ENCODED_USERNAME>
 export ARCON_PASSWORD=<ENCODED_PASSWORD>
 
 ## Usage
-lookup('arcon.credential_resolver.arcon', '/135.235.136.171/7/user1')
+lookup('arcon.credential_resolver.arcon_dv_plugin', '/135.235.136.171/7/user1')
 
 ## Notes
 - No hardcoded passwords
