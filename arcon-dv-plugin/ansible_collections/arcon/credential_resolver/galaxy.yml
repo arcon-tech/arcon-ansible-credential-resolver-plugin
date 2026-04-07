@@ -1,6 +1,6 @@
 namespace: arcon
 
-name: credential_resolver
+name: credential_resolver_dv
 
 version: 1.0.0
 
