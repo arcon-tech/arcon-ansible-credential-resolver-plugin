@@ -4,7 +4,7 @@
 Ansible lookup plugin to fetch credentials from ARCON PAM.
 
 ## Installation
-ansible-galaxy collection install arcon-credential_resolver-<version>.tar.gz
+ansible-galaxy collection install arcon-credential_resolver_dv-<version>.tar.gz
 
 ## Configuration
 export ARCON_HOST=https://<ARCON_SERVER>:<PORT>
