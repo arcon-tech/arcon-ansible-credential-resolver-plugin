@@ -1,61 +1,74 @@
-#!/usr/bin/python
+# -*- coding: utf-8 -*-
+# GNU General Public License v3.0+
+# (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+# Copyright (c) 2024, Arcon Tech Solutions <ansible@arcontech.in>
+# This file is part of Ansible
+#
+# Ansible is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
 
 from __future__ import absolute_import, division, print_function
 __metaclass__ = type
 
-import requests
-import urllib3
+DOCUMENTATION = r'''
+---
+name: arcon_plugin
+short_description: Retrieve credentials from ARCON PAM
+description:
+  - Lookup plugin to securely retrieve credentials from ARCON PAM
+    using token-based authentication and dynamic API integration.
+version_added: "1.0.0"
+author:
+  - Arcon Tech Solutions (@arcon-tech)
+options:
+  _terms:
+    description:
+      - Input path in the format C(/ip/service_type/username).
+    required: true
+    type: str
+notes:
+  - Requires network access to the ARCON PAM API endpoint.
+  - All configuration is read from environment variables.
+  - Set ARCON_HOST, ARCON_USERNAME, ARCON_PASSWORD before running.
+'''
+
+EXAMPLES = r'''
+- name: Retrieve a credential from ARCON PAM
+  ansible.builtin.debug:
+    msg: "{{ lookup('arcon.credential_resolver.arcon_plugin', '/192.168.1.10/1/admin') }}"
+'''
+
+RETURN = r'''
+_raw:
+  description: A list containing the retrieved password from ARCON PAM.
+  type: list
+  elements: str
+'''
+
+import os
 import time
+
+try:
+    import requests
+    import urllib3
+    HAS_REQUESTS = True
+    HAS_REQUESTS_ERR = None
+except ImportError as imp_exc:
+    HAS_REQUESTS = False
+    HAS_REQUESTS_ERR = imp_exc
+    requests = None
+    urllib3 = None
+
 from ansible.errors import AnsibleError
 from ansible.plugins.lookup import LookupBase
 from ansible.utils.display import Display
 
 display = Display()
-urllib3.disable_warnings()
 
-DOCUMENTATION = r'''
-lookup: arcon
-author:
-  - Arcon Tech Solutions
-version_added: "1.0.0"
-
-short_description: Retrieve password from ARCON PAM
-
-description:
-  - Lookup plugin to fetch credentials from ARCON PAM.
-
-options:
-  arcon_host:
-    description: ARCON PAM host URL
-    required: True
-    env:
-      - name: ARCON_HOST
-
-  arcon_username:
-    description: ARCON API username
-    required: True
-    env:
-      - name: ARCON_USERNAME
-
-  arcon_password:
-    description: ARCON API password
-    required: True
-    env:
-      - name: ARCON_PASSWORD
-
-  retry_count:
-    description: API retry attempts
-    default: 3
-
-  retry_delay:
-    description: Delay between retries
-    default: 2
-
-  _terms:
-    description:
-      - Input format /ip/service_type/username
-    required: True
-'''
+if urllib3:
+    urllib3.disable_warnings()
 
 # ---------------- GLOBAL CACHE ----------------
 
@@ -64,7 +77,7 @@ TOKEN_CACHE = {
     "expiry": 0
 }
 
-SESSION = requests.Session()
+SESSION = requests.Session() if requests else None
 
 
 class ArconClient:
@@ -94,10 +107,10 @@ class ArconClient:
             except Exception as e:
 
                 if attempt == self.retry_count - 1:
-                    raise AnsibleError(f"API call failed: {str(e)}")
+                    raise AnsibleError("API call failed: {0}".format(str(e)))
 
                 sleep_time = self.retry_delay * (2 ** attempt)
-                display.warning(f"Retrying API call in {sleep_time}s")
+                display.warning("Retrying API call in {0}s".format(sleep_time))
 
                 time.sleep(sleep_time)
 
@@ -105,13 +118,11 @@ class ArconClient:
 
     def get_token(self):
 
-        global TOKEN_CACHE
-
         if TOKEN_CACHE["token"] and time.time() < TOKEN_CACHE["expiry"]:
             display.v("Using cached ARCON token")
             return TOKEN_CACHE["token"]
 
-        url = f"{self.host}/arconToken"
+        url = "{0}/arconToken".format(self.host)
 
         # payload = {
         #     "username": self.username,
@@ -119,7 +130,8 @@ class ArconClient:
         #     "grant_type": "password"
         # }
 
-        payload = f"grant_type=password&username={self.username}&password={self.password}"
+        payload = "grant_type=password&username={0}&password={1}".format(
+            self.username, self.password)
         print(payload)
         headers = {
             "Content-Type": "application/x-www-form-urlencoded"
@@ -151,7 +163,7 @@ class ArconClient:
 
         token = self.get_token()
 
-        url = f"{self.host}/api/ServicePassword/GetTargetDevicePassKey"
+        url = "{0}/api/ServicePassword/GetTargetDevicePassKey".format(self.host)
 
         payload = [
             {
@@ -164,7 +176,7 @@ class ArconClient:
         ]
 
         headers = {
-            "Authorization": f"Bearer {token}",
+            "Authorization": "Bearer {0}".format(token),
             "Content-Type": "application/json"
         }
 
@@ -190,6 +202,13 @@ class LookupModule(LookupBase):
 
     def run(self, terms, variables=None, **kwargs):
 
+        if not HAS_REQUESTS:
+            raise AnsibleError(
+                "The 'requests' Python library is required. "
+                "Install it with: pip install requests. "
+                "Error: {0}".format(HAS_REQUESTS_ERR)
+            )
+
         if not terms:
             raise AnsibleError("Input format must be /ip/service_type/username")
 
@@ -203,12 +222,18 @@ class LookupModule(LookupBase):
         except Exception:
             raise AnsibleError("Invalid input format. Use /ip/service_type/username")
 
-        host = self.get_option("arcon_host")
-        user = self.get_option("arcon_username")
-        password = self.get_option("arcon_password")
+        host = os.environ.get("ARCON_HOST")
+        user = os.environ.get("ARCON_USERNAME")
+        password = os.environ.get("ARCON_PASSWORD")
+        retry_count = int(os.environ.get("ARCON_RETRY_COUNT", 3))
+        retry_delay = int(os.environ.get("ARCON_RETRY_DELAY", 2))
 
-        retry_count = int(self.get_option("retry_count"))
-        retry_delay = int(self.get_option("retry_delay"))
+        if not host:
+            raise AnsibleError("ARCON_HOST environment variable is not set")
+        if not user:
+            raise AnsibleError("ARCON_USERNAME environment variable is not set")
+        if not password:
+            raise AnsibleError("ARCON_PASSWORD environment variable is not set")
 
         client = ArconClient(
             host,
