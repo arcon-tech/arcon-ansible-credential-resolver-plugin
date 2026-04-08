@@ -132,7 +132,6 @@ class ArconClient:
 
         payload = "grant_type=password&username={0}&password={1}".format(
             self.username, self.password)
-        print(payload)
         headers = {
             "Content-Type": "application/x-www-form-urlencoded"
         }
